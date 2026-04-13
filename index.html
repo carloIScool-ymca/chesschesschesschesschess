@@ -1,76 +1,110 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Stockfish 1v1</title>
-    <!-- CSS for the board -->
-    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <meta charset="UTF-8">
+    <title>1v1 Stockfish Chess</title>
+    <!-- Styles for the board and UI -->
+    <link rel="stylesheet" href="https://unpkg.com">
     <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; }
-        #myBoard { width: 400px; margin: 20px; }
-        .info { margin: 10px; padding: 10px; background: #f0f0f0; border-radius: 5px; width: 400px; }
+        body { font-family: sans-serif; background: #2c3e50; color: white; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        #board { width: 400px; margin: 20px; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+        .info-panel { background: #34495e; padding: 20px; border-radius: 8px; width: 380px; }
+        .stat { margin: 10px 0; border-bottom: 1px solid #5d6d7e; padding-bottom: 5px; }
+        input[type=range] { width: 100%; cursor: pointer; }
+        #pv { font-size: 0.85em; color: #bdc3c7; font-style: italic; }
     </style>
 </head>
 <body>
+
     <h2>Stockfish 1v1</h2>
-    <div id="myBoard"></div>
-    
-    <div class="info">
-        <label>Elo Strength: <span id="eloLabel">1500</span></label><br>
-        <input type="range" id="eloSlider" min="1350" max="2850" value="1500" step="50">
-        <hr>
-        <div><strong>Eval:</strong> <span id="status">0.00</span></div>
-        <div><strong>Why:</strong> <span id="enginePV">Thinking...</span></div>
+
+    <div id="board"></div>
+
+    <div class="info-panel">
+        <div class="stat">
+            <strong>Engine Elo:</strong> <span id="eloVal">1500</span><br>
+            <input type="range" id="eloSlider" min="1350" max="2850" value="1500" step="50">
+        </div>
+        <div class="stat"><strong>Evaluation:</strong> <span id="evalScore">0.00</span></div>
+        <div class="stat"><strong>Engine Logic:</strong> <div id="pv">Thinking...</div></div>
     </div>
 
-    <!-- Required Libraries -->
-    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <!-- Load Dependencies -->
+    <script src="https://jquery.com"></script>
+    <script src="https://cloudflare.com"></script>
+    <script src="https://unpkg.com"></script>
 
     <script>
         var board = null;
         var game = new Chess();
-        var stockfish = new Worker('stockfish.js'); // This must be in the same folder
+        // Initialize Stockfish Worker
+        var stockfish = new Worker('stockfish.js');
 
-        // Initialize Engine
         stockfish.postMessage('uci');
-        setElo(1500);
 
-        function setElo(value) {
+        function setDifficulty(elo) {
             stockfish.postMessage('setoption name UCI_LimitStrength value true');
-            stockfish.postMessage('setoption name UCI_Elo value ' + value);
+            stockfish.postMessage('setoption name UCI_Elo value ' + elo);
         }
 
-        // Engine Listener
+        setDifficulty(1500);
+
+        // Listen for Engine Messages
         stockfish.onmessage = function(event) {
             var line = event.data;
+
+            // Update Evaluation
             if (line.includes('score cp')) {
-                var score = (line.match(/score cp (-?\d+)/)[1] / 100).toFixed(2);
-                document.getElementById('status').innerText = score;
+                var scoreMatch = line.match(/score cp (-?\d+)/);
+                if (scoreMatch) {
+                    var score = (parseInt(scoreMatch[1]) / 100).toFixed(2);
+                    document.getElementById('evalScore').innerText = score;
+                }
             }
+
+            // Update Engine Logic (PV)
             if (line.includes(' pv ')) {
-                document.getElementById('enginePV').innerText = line.split(' pv ')[1].split(' ').slice(0, 4).join(' ');
+                var pv = line.split(' pv ')[1].split(' ').slice(0, 5).join(' ');
+                document.getElementById('pv').innerText = "Expected: " + pv;
             }
+
+            // Make Engine Move
             if (line.startsWith('bestmove')) {
-                var move = line.split(' ')[1];
-                game.move(move, { sloppy: true });
+                var moveArr = line.split(' ');
+                var bestMove = moveArr[1];
+                game.move(bestMove, { sloppy: true });
                 board.position(game.fen());
             }
         };
 
+        // Handle Player Move
         function onDrop(source, target) {
-            var move = game.move({ from: source, to: target, promotion: 'q' });
+            var move = game.move({
+                from: source,
+                to: target,
+                promotion: 'q' 
+            });
+
             if (move === null) return 'snapback';
-            
+
+            // Ask Engine for move
             stockfish.postMessage('position fen ' + game.fen());
             stockfish.postMessage('go depth 12');
         }
 
-        board = Chessboard('myBoard', { draggable: true, position: 'start', onDrop: onDrop });
-        
+        // Initialize Board with Piece Theme fix
+        var config = {
+            draggable: true,
+            position: 'start',
+            onDrop: onDrop,
+            pieceTheme: 'https://chessboardjs.com{piece}.png'
+        };
+        board = Chessboard('board', config);
+
+        // Elo Slider Event
         document.getElementById('eloSlider').oninput = function() {
-            document.getElementById('eloLabel').innerText = this.value;
-            setElo(this.value);
+            document.getElementById('eloVal').innerText = this.value;
+            setDifficulty(this.value);
         };
     </script>
 </body>
